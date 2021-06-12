@@ -45,25 +45,26 @@ _LANGUAGE = ["vi"]
 
 
 class OpenSubtitlesConfig(datasets.BuilderConfig):
-    def __init__(self, *args, lang1=None, min_len=9, max_len=128, **kwargs):
+    def __init__(self, *args, lang=None, min_len=9, max_len=128, max_context=10, **kwargs):
         super().__init__(
             *args,
-            name=f"{lang1}",
+            name=f"{lang}",
             **kwargs,
         )
-        self.lang1 = lang1
+        self.lang = lang
         self.min_len = min_len
         self.max_len = max_len
+        self.max_context = max_context
 
 
 class OpenSubtitles(datasets.GeneratorBasedBuilder):
     BUILDER_CONFIGS = [
         OpenSubtitlesConfig(
-            lang1=lang1,
-            description=f"Corpus {lang1}",
+            lang=lang,
+            description=f"Corpus {lang}",
             version=datasets.Version(_VERSION),
         )
-        for lang1 in _LANGUAGE
+        for lang in _LANGUAGE
     ]
     BUILDER_CONFIG_CLASS = OpenSubtitlesConfig
 
@@ -83,10 +84,10 @@ class OpenSubtitles(datasets.GeneratorBasedBuilder):
         )
 
     def _split_generators(self, dl_manager):
-        def _base_url(lang1):
-            return _BASE_URL.format(lang1)
+        def _base_url(lang):
+            return _BASE_URL.format(lang)
 
-        download_url = _base_url(self.config.lang1)
+        download_url = _base_url(self.config.lang)
         path = dl_manager.download_and_extract(download_url)
         return [
             datasets.SplitGenerator(
@@ -126,6 +127,8 @@ class OpenSubtitles(datasets.GeneratorBasedBuilder):
 
                 if last_sentence is not None:
                     context.append(last_sentence)
+                if len(context) > self.config.max_context:
+                    context = context[1:]
                 last_sentence = x
 
                 result = (

@@ -8,17 +8,17 @@ import random
 import time
 import math
 import os
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 # device = "cpu"
-dataset = load_dataset("./open_sub_data.py", lang1="vi", split="train")
+dataset = load_dataset("./open_sub.py", lang="vi", split="train[:1%]")
 
 tokenizer = Tokenizer.from_file("./tokenizer-opensub.json")
 
-BOS_ID, EOS_ID, PAD_ID = tokenizer.encode("<bos><eos><pad>").ids
+BOS_ID, EOS_ID, PAD_ID = tokenizer.encode("<BOS><EOS><PAD>").ids
 MAX_LEN = 256
 
 
@@ -221,9 +221,9 @@ def evaluate(encoder, decoder, inputs, max_length=MAX_LEN):
 
 def evaluateRandomly(encoder, decoder, n=10):
     for i in range(n):
-        item = tensorFromExample(random.choice(dataset))
-        print('>', tokenizer.decode(item[0]))
-        print('=', tokenizer.decode(item[1]))
+        item = tensorFromExample(tokenizer, random.choice(dataset))
+        print('>', tokenizer.decode(item[0].view(1,1,-1)[0][0].tolist()))
+        print('=', tokenizer.decode(item[1].view(1,1,-1)[0][0].tolist()))
         output_sentence = evaluate(encoder, decoder, item)
         # output_sentence = ' '.join(output_words)
         print('<', output_sentence)
@@ -236,3 +236,4 @@ if __name__ == "__main__":
     # attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
     decoder1 = DecoderRNN(hidden_size, tokenizer.get_vocab_size()).to(device)
     trainIters(encoder1, decoder1, 5, print_every=1)
+    evaluateRandomly(encoder1, decoder1, 2)
