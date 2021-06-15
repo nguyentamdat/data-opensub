@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
-from sklearn.model_selection import train_test_split
-from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, decoders, trainers
 from datasets import load_dataset
+from tokenizers import Tokenizer
 import torch.nn.functional as F
 import random
 import time
@@ -14,11 +13,12 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 # device = "cpu"
-dataset = load_dataset("./open_sub.py", lang="vi", split="train[:1%]")
-
-tokenizer = Tokenizer.from_file("./tokenizer-opensub.json")
+dataset = load_dataset("./open_sub.py", lang="vi", split="train[:10]")
+MODEL_PATH = "opensub/"
+tokenizer = Tokenizer.from_file(MODEL_PATH + "tokenizer.json")
 
 BOS_ID, EOS_ID, PAD_ID = tokenizer.encode("<BOS><EOS><PAD>").ids
+print(BOS_ID, EOS_ID, PAD_ID)
 MAX_LEN = 256
 
 
@@ -155,29 +155,29 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
 
     encoder_optimizer = torch.optim.SGD(encoder.parameters(), lr=learning_rate)
     decoder_optimizer = torch.optim.SGD(decoder.parameters(), lr=learning_rate)
-    training_pairs = [tensorFromExample(tokenizer, random.choice(dataset))
-                      for i in range(n_iters)]
-    criterion = nn.NLLLoss()
+    training_pairs = [tensorFromExample(tokenizer, i)
+                      for i in dataset]
+    train_len = len(training_pairs)
+    criterion = nn.CrossEntropyLoss()
 
     for iter in range(1, n_iters + 1):
-        print("start iter", iter)
-        training_pair = training_pairs[iter - 1]
-        input_tensor = training_pair[0]
-        target_tensor = training_pair[1]
+        for training_pair in training_pairs:
+            input_tensor = training_pair[0]
+            target_tensor = training_pair[1]
 
-        loss = train(input_tensor, target_tensor, encoder,
-                     decoder, encoder_optimizer, decoder_optimizer, criterion)
-        print_loss_total += loss
-        plot_loss_total += loss
+            loss = train(input_tensor, target_tensor, encoder,
+                        decoder, encoder_optimizer, decoder_optimizer, criterion)
+            print_loss_total += loss
+            plot_loss_total += loss
 
         if iter % print_every == 0:
-            print_loss_avg = print_loss_total / print_every
+            print_loss_avg = print_loss_total / print_every / train_len
             print_loss_total = 0
             print('%s (%d %d%%) %.4f' % (timeSince(start, iter / n_iters),
-                                         iter, iter / n_iters * 100, print_loss_avg))
+                                        iter, iter / n_iters * 100, print_loss_avg))
 
         if iter % plot_every == 0:
-            plot_loss_avg = plot_loss_total / plot_every
+            plot_loss_avg = plot_loss_total / plot_every / train_len
             plot_losses.append(plot_loss_avg)
             plot_loss_total = 0
 
@@ -235,5 +235,5 @@ if __name__ == "__main__":
     encoder1 = EncoderRNN(tokenizer.get_vocab_size(), hidden_size).to(device)
     # attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
     decoder1 = DecoderRNN(hidden_size, tokenizer.get_vocab_size()).to(device)
-    trainIters(encoder1, decoder1, 5, print_every=1)
-    evaluateRandomly(encoder1, decoder1, 2)
+    trainIters(encoder1, decoder1, 10, print_every=1)
+    evaluateRandomly(encoder1, decoder1, 5)
