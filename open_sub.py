@@ -45,7 +45,7 @@ _LANGUAGE = ["vi"]
 
 
 class OpenSubtitlesConfig(datasets.BuilderConfig):
-    def __init__(self, *args, lang=None, min_len=9, max_len=128, max_context=10, **kwargs):
+    def __init__(self, *args, lang=None, min_len=9, max_len=128, max_context=10, eos="<EOS>", bos="<BOS>", pad="<PAD>", **kwargs):
         super().__init__(
             *args,
             name=f"{lang}",
@@ -55,6 +55,9 @@ class OpenSubtitlesConfig(datasets.BuilderConfig):
         self.min_len = min_len
         self.max_len = max_len
         self.max_context = max_context
+        self.eos_token = eos
+        self.bos_token = bos
+        self.pad_token = pad
 
 
 class OpenSubtitles(datasets.GeneratorBasedBuilder):
@@ -121,7 +124,7 @@ class OpenSubtitles(datasets.GeneratorBasedBuilder):
             last_sentence = None
             for sentence_counter, x in enumerate(f1):
                 x = x.strip()
-                x = self._preprocess_line(x)
+                x = self._preprocess_line(x) + self.config.eos_token
                 if (self._should_skip(x)):
                     continue
 
@@ -135,7 +138,7 @@ class OpenSubtitles(datasets.GeneratorBasedBuilder):
                     sentence_counter,
                     {
                         "id": str(sentence_counter),
-                        "context": context,
+                        "context": context if len(context) > 0 else [self.config.eos_token],
                         "next_sentence": x
                     },
                 )

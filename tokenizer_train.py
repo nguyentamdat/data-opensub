@@ -1,6 +1,7 @@
 from tokenizers.implementations import ByteLevelBPETokenizer
 import datasets
 import os
+from transformers import GPT2TokenizerFast
 
 # batch generator for train
 MODEL_PATH = "opensub/"
@@ -43,3 +44,6 @@ tokenizer.save(MODEL_PATH+"tokenizer.json")
 
 ids = tokenizer.encode("chào cậu<BOS><PAD><EOS>")
 print(ids.ids, ids.tokens)
+
+fast_token = GPT2TokenizerFast(vocab_file=MODEL_PATH+"vocab.json",merges_file=MODEL_PATH + "merges.txt", tokenizer_file=MODEL_PATH+"tokenizer.json", unk_token="<PAD>", bos_token="<BOS>", eos_token="<EOS>", pad_token="<PAD>")
+fast_token.save_pretrained("./gpt-opensub")
