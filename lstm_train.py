@@ -10,7 +10,8 @@ import math
 from transformers.file_utils import PaddingStrategy
 import numpy as np
 from transformers.tokenization_utils_base import TruncationStrategy
-# import os
+import os
+from tqdm import tqdm
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
@@ -29,7 +30,7 @@ MAX_LEN = 256
 
 def padding_trunc_left(M, max_len=MAX_LEN):
     maxlen = max(len(r) for r in M)
-    axe_y = min(max_len, maxlen)
+    axe_y = max_len
     Z = np.zeros((len(M), axe_y), dtype=np.int32)
     for enu, row in enumerate(M):
         if len(row) <= axe_y:
@@ -39,8 +40,8 @@ def padding_trunc_left(M, max_len=MAX_LEN):
     return Z
 
 
-def padding_trunc_right(M):
-    maxlen = max(len(r) for r in M)
+def padding_trunc_right(M, max_len=MAX_LEN):
+    maxlen = max_len
     Z = np.zeros((len(M), maxlen), dtype=np.int32)
     for enu, row in enumerate(M):
         Z[enu, :len(row)] += row
@@ -201,21 +202,21 @@ def trainIters(dataloader, encoder, decoder, n_iters, print_every=1000, learning
     train_len = len(dataloader)
     training_pairs = dataloader
     criterion = nn.CrossEntropyLoss(reduction="mean")
-    
-    for iter in range(1, n_iters + 1):
-        for training_pair in training_pairs:
+
+    for iter in tqdm(range(1, n_iters + 1), desc="Progress"):
+        for training_pair in tqdm(training_pairs):
             input_tensor = training_pair["input"].to(device)
             target_tensor = training_pair["target"].to(device)
 
             loss = train(input_tensor, target_tensor, encoder,
                          decoder, encoder_optimizer, decoder_optimizer, criterion, batch_size=batch_size)
             print_loss_total += loss
-            
+
         if iter % print_every == 0:
             print_loss_avg = print_loss_total / print_every / train_len
             print_loss_total = 0
             print('%s (%d %d%%) %.4f' % (timeSince(start, iter / n_iters),
-                                            iter, iter / n_iters * 100, print_loss_avg))
+                                         iter, iter / n_iters * 100, print_loss_avg))
 
 
 def evaluate(encoder, decoder, inputs, max_length=MAX_LEN, batch_size=1):
@@ -277,19 +278,25 @@ def evaluateRandomly(dataset, encoder, decoder, n=10):
 
 if __name__ == "__main__":
     hidden_size = 256
-    batch=256
+    batch = 128
     # print(dataset[:5])
     vocab_size = tokenizer.vocab_size + tokenizer.num_special_tokens_to_add()
     encoder1 = EncoderRNN(vocab_size, hidden_size).to(device)
     # attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
     decoder1 = DecoderRNN(hidden_size, vocab_size).to(device)
-    dataset = load_dataset("./open_sub.py", lang="vi", split="train[:1000]")
+    dataset = load_dataset("./open_sub.py", lang="vi", split="train")
     preprocessed = dataset.map(transform_dataset(tokenizer), batched=True)
     preprocessed.set_format(
         type="pt", columns=["input", "target"], device=device)
     dataloader = torch.utils.data.DataLoader(
         preprocessed, batch_size=batch, drop_last=True)
     # print(next(iter(dataloader)))
+    print("-------start training----------")
     trainIters(dataloader, encoder1, decoder1,
-               100, print_every=10, batch_size=batch)
-    evaluateRandomly(preprocessed, encoder1, decoder1, 5)
+               10, print_every=1, batch_size=batch)
+    print("-------end training------------")
+    evaluateRandomly(preprocessed, encoder1, decoder1, 10)
+    t = time.localtime()
+    strtime = time.strftime("%Y%m%d%H%M%S", t)
+    torch.save(encoder1, "encoder-"+strtime + ".pth")
+    torch.save(decoder1, "decoder-"+strtime + ".pth")
