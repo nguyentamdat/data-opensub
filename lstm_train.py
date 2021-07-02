@@ -7,9 +7,7 @@ import torch.nn.functional as F
 import random
 import time
 import math
-from transformers.file_utils import PaddingStrategy
 import numpy as np
-from transformers.tokenization_utils_base import TruncationStrategy
 import os
 from tqdm import tqdm
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
@@ -89,7 +87,7 @@ class EncoderRNN(nn.Module):
         # print(inp.size())
         embedded = self.embedding(inp)
         # print(embedded.size())
-        output = embedded.transpose(0, 1)
+        output = embedded
         # print(output.size())
         # input()
         output, hidden = self.gru(output, hidden)
@@ -110,12 +108,15 @@ class DecoderRNN(nn.Module):
 
     def forward(self, inp, hidden):
         # print(inp.size())
-        output = self.embedding(inp).transpose(0, 1)
+        output = self.embedding(inp)
         # print(output.size())
         # input()
         output = F.relu(output)
         output, hidden = self.gru(output, hidden)
-        output = self.softmax(self.out(output[0]))
+        output = self.out(output)
+        # print(output.size())
+        output = self.softmax(output)
+        # print(output.size())
         return output, hidden
 
     def initHidden(self, batch_size=2):
@@ -134,18 +135,12 @@ def train(input_tensor: torch.Tensor, target_tensor: torch.Tensor, encoder: Enco
     input_length = input_tensor.size(1)
     target_length = target_tensor.size(1)
 
-    encoder_outputs = torch.zeros(max_len, encoder.hidden_size, device=device)
-
     loss = 0
     # print(input_tensor.size(), target_tensor.size(), encoder_hidden.size())
+    encoder_outputs, encoder_hidden = encoder(input_tensor, encoder_hidden)
+    # print(encoder_outputs.size(), encoder_hidden.size())
 
-    for ei in range(input_length):
-        encoder_output, encoder_hidden = encoder(
-            input_tensor[:, ei].unsqueeze(1), encoder_hidden)
-        encoder_outputs[ei] = encoder_output[0, 0]
-    # print(encoder_outputs.size())
-
-    decoder_input = torch.tensor([[BOS_ID]] * batch_size, device=device)
+    decoder_input = torch.tensor([[BOS_ID] * batch_size], device=device)
     decoder_hidden = encoder_hidden
 
     # print(decoder_input.size())
@@ -153,20 +148,25 @@ def train(input_tensor: torch.Tensor, target_tensor: torch.Tensor, encoder: Enco
     # print(target_tensor, target_tensor.size(0))
     if use_teacher_forcing:
         for di in range(target_length):
+            # print(decoder_input.size())
             decoder_output, decoder_hidden = decoder(
                 decoder_input, decoder_hidden)
+            decoder_output = decoder_output.squeeze(0)
             # print(decoder_output.size())
             # print(target_tensor[:, di].size())
             # input()
             loss += criterion(decoder_output, target_tensor[:, di])
-            decoder_input = target_tensor[:, di].unsqueeze(1)
+            decoder_input = target_tensor[:, di].unsqueeze(0)
     else:
         for di in range(target_length):
             decoder_output, decoder_hidden = decoder(
                 decoder_input, decoder_hidden)
             topv, topi = decoder_output.topk(1)
-            decoder_input = topi.detach()
-
+            decoder_input = topi.detach().view(1, batch_size)
+            decoder_output = decoder_output.squeeze(0)
+            # print(decoder_output.size(), decoder_output)
+            # print(target_tensor[:, di].size())
+            # input()
             loss += criterion(decoder_output, target_tensor[:, di])
             # print(decoder_input.size())
             # if decoder_input.item() == EOS_ID:
@@ -205,7 +205,7 @@ def trainIters(dataloader, encoder, decoder, n_iters, print_every=1000, learning
 
     for iter in tqdm(range(1, n_iters + 1), desc="Progress"):
         for training_pair in tqdm(training_pairs):
-            input_tensor = training_pair["input"].to(device)
+            input_tensor = training_pair["input"].to(device).transpose(0, 1)
             target_tensor = training_pair["target"].to(device)
 
             loss = train(input_tensor, target_tensor, encoder,
@@ -221,19 +221,15 @@ def trainIters(dataloader, encoder, decoder, n_iters, print_every=1000, learning
 
 def evaluate(encoder, decoder, inputs, max_length=MAX_LEN, batch_size=1):
     with torch.no_grad():
-        input_tensor = inputs["input"].to(device).unsqueeze(0)
-        input_length = input_tensor.size(1)
+        input_tensor = inputs["input"].to(device).unsqueeze(1)
+        # print(input_tensor.size())
+        # input_length = input_tensor.size(1)
         encoder_hidden = encoder.initHidden(batch_size)
 
         encoder_outputs = torch.zeros(
             max_length, encoder.hidden_size, device=device)
 
-        # print(input_tensor.size())
-
-        for ei in range(input_length):
-            encoder_output, encoder_hidden = encoder(input_tensor[:, ei].unsqueeze(1),
-                                                     encoder_hidden)
-            encoder_outputs[ei] += encoder_output[0, 0]
+        encoder_outputs, encoder_hidden = encoder(input_tensor, encoder_hidden)
 
         decoder_input = torch.tensor([[BOS_ID]], device=device)  # SOS
 
@@ -256,7 +252,7 @@ def evaluate(encoder, decoder, inputs, max_length=MAX_LEN, batch_size=1):
             else:
                 decoded_words.append(topi.item())
 
-            decoder_input = topi.detach()
+            decoder_input = topi.detach().squeeze(0)
         decoded_words = tokenizer.decode(
             decoded_words, skip_special_tokens=True)
         return decoded_words
@@ -278,13 +274,13 @@ def evaluateRandomly(dataset, encoder, decoder, n=10):
 
 if __name__ == "__main__":
     hidden_size = 256
-    batch = 128
+    batch = 10
     # print(dataset[:5])
     vocab_size = tokenizer.vocab_size + tokenizer.num_special_tokens_to_add()
     encoder1 = EncoderRNN(vocab_size, hidden_size).to(device)
     # attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
     decoder1 = DecoderRNN(hidden_size, vocab_size).to(device)
-    dataset = load_dataset("./open_sub.py", lang="vi", split="train")
+    dataset = load_dataset("./open_sub.py", lang="vi", split="train[:10]")
     preprocessed = dataset.map(transform_dataset(tokenizer), batched=True)
     preprocessed.set_format(
         type="pt", columns=["input", "target"], device=device)
@@ -292,11 +288,14 @@ if __name__ == "__main__":
         preprocessed, batch_size=batch, drop_last=True)
     # print(next(iter(dataloader)))
     print("-------start training----------")
-    trainIters(dataloader, encoder1, decoder1,
-               10, print_every=1, batch_size=batch)
+    try:
+        trainIters(dataloader, encoder1, decoder1,
+                   100, print_every=1, batch_size=batch)
+    except:
+        pass
     print("-------end training------------")
-    evaluateRandomly(preprocessed, encoder1, decoder1, 10)
-    t = time.localtime()
-    strtime = time.strftime("%Y%m%d%H%M%S", t)
-    torch.save(encoder1, "encoder-"+strtime + ".pth")
-    torch.save(decoder1, "decoder-"+strtime + ".pth")
+    evaluateRandomly(preprocessed, encoder1, decoder1, 3)
+    # t = time.localtime()
+    # strtime = time.strftime("%Y%m%d%H%M%S", t)
+    # torch.save(encoder1, "encoder-"+strtime + ".pth")
+    # torch.save(decoder1, "decoder-"+strtime + ".pth")
