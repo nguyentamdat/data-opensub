@@ -9,6 +9,7 @@ from itertools import chain
 from tqdm import tqdm
 
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 tokenizer = GPT2TokenizerFast.from_pretrained("./gpt-opensub")
 
 
@@ -66,9 +67,7 @@ n_batch = len(map_token) // (seq_size * batch_size)
 vocab_size = tokenizer.vocab_size + tokenizer.num_special_tokens_to_add()
 
 
-def main(num_step=1, batch_size=1, seq_size=256, grad_norm=5):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    net = RNNModel(vocab_size, 256, 256, 256).to(device)
+def main(net, num_step=1, batch_size=1, seq_size=256, grad_norm=5):
     crit, op = get_loss_and_train_op(net, 0.01)
 
     iteration = 0
@@ -111,7 +110,7 @@ def main(num_step=1, batch_size=1, seq_size=256, grad_norm=5):
             if iteration % 1000 == 0:
                 predict(device, net, ["<BOS>"], tokenizer, topk=5)
                 torch.save(net.state_dict(),
-                        'checkpoint_pt/model-{}.pth'.format(iteration))
+                        'checkpoint_pt/model1-{}.pth'.format(iteration))
 
 
 def predict(device, net: RNNModel, init, tokenizer, topk=5):
@@ -135,5 +134,6 @@ def predict(device, net: RNNModel, init, tokenizer, topk=5):
         init.extend(tokenizer.decode([choice]))
     print("".join(init))
 
-
-main(batch_size=batch_size, seq_size=seq_size, num_step=10)
+net = RNNModel(vocab_size, 256, 256, 256).to(device)
+net.load_state_dict(torch.load("checkpoint_pt/model-264000.pth"))
+main(net, batch_size=batch_size, seq_size=seq_size, num_step=10)

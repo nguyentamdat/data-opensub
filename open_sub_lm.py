@@ -108,22 +108,23 @@ class OpenSubtitles(datasets.GeneratorBasedBuilder):
         line = re.sub("[\\[(](.*?)[\\])]", "", line)
 
         # Strip blanks hyphens and line breaks
-        line = line.strip(" -\n")
+        line = line.strip(" -\n!")
 
         return line
 
-    def _should_skip(self, line, min_length=9, max_length=127):
+    def _should_skip(self, line):
         """Whether a line should be skipped depending on the length."""
-        return len(line) < min_length or len(line) > max_length
+        numbers = sum(c.isdigit() for c in line)
+        return len(line) < self.config.min_len or len(line) > self.config.max_len or numbers > len(line) / 2
 
     def _generate_examples(self, datapath):
         with open(datapath, encoding="utf-8") as f1:
             sentence_counter = 0
             for x in f1:
-                x = x.strip()
-                x = self.config.bos_token + self._preprocess_line(x) + self.config.eos_token
+                x = self._preprocess_line(x.strip())
                 if (self._should_skip(x)):
                     continue
+                x = self.config.bos_token + x + self.config.eos_token
 
                 result = (
                     sentence_counter,
